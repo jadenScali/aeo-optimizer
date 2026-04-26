@@ -386,8 +386,9 @@ export default function Generate() {
               </h3>
               <s-paragraph>
                 Choose the storefront content you want to expose in your{" "}
-                <s-text>llms.txt</s-text>. AI answer engines will use this file
-                to discover and cite the pages you select.
+                <s-text>llms.txt</s-text>. Note: <s-text>llms.txt</s-text> is
+                not a guaranteed standard — some tools may ignore it entirely.
+                Consider it a best-effort hint for systems that opt in.
               </s-paragraph>
               <s-stack direction="block" gap="base">
                 <s-checkbox
@@ -483,8 +484,8 @@ export default function Generate() {
             </h3>
             <s-paragraph>
               Review and edit the generated <s-text>llms.txt</s-text> below.
-              When you&apos;re happy with it, publish to make it live at{" "}
-              <s-text>/llms.txt</s-text>.
+              When you publish, it becomes available at <s-text>/llms.txt</s-text>,
+              but AI platforms may or may not read it.
             </s-paragraph>
 
             <s-text-area
@@ -516,6 +517,7 @@ export default function Generate() {
           <s-stack direction="block" gap="large">
             <s-banner heading="llms.txt published" tone="success">
               Your <s-text>llms.txt</s-text> is now live on your storefront.
+              Adoption isn&apos;t guaranteed — treat it as an optional signal.
             </s-banner>
             {fetcher.data?.ok &&
             fetcher.data.intent === "publish" &&

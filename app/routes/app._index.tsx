@@ -20,9 +20,13 @@ export default function Index() {
           Optimize Now
         </h3>
         <s-paragraph>
-          Generate an <s-text>llms.txt</s-text> for your storefront so AI
-          answer engines can discover and cite your content. Once generated,
-          it will be served at <s-text>/llms.txt</s-text>.
+          Generate an llms.txt file for your storefront.
+          <br />
+          <br />
+          This is an experimental standard and not widely adopted yet, but it may help AI systems better understand and reference your site content in the future.
+          <br />
+          <br />
+          Once published, it will be available at /llms.txt.
         </s-paragraph>
         <s-stack direction="inline" gap="base">
           <s-button variant="primary" href="/app/generate">
