@@ -15,7 +15,10 @@ export default function Index() {
 
   return (
     <s-page heading="AEO Optimizer">
-      <s-section heading="llms.txt">
+      <s-section>
+        <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, marginBottom: "1rem" }}>
+          Optimize Now
+        </h3>
         <s-paragraph>
           Generate an <s-text>llms.txt</s-text> for your storefront so AI
           answer engines can discover and cite your content. Once generated,
