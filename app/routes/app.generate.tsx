@@ -3,6 +3,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import type { CallbackEvent } from "@shopify/polaris-types";
 
 type Options = {
   includeCollections: boolean;
@@ -46,10 +47,15 @@ export default function Generate() {
   const [preview, setPreview] = useState("");
   const [publishing, setPublishing] = useState(false);
 
-  const toggle = (key: keyof Options) => (event: any) => {
-    const checked: boolean = !!event?.target?.checked;
-    setOptions((prev) => ({ ...prev, [key]: checked }));
-  };
+  const toggle =
+    (key: keyof Options) =>
+    (
+      event: CallbackEvent<"s-checkbox"> | CallbackEvent<"s-switch">,
+    ): void => {
+      const target = event?.target as unknown as { checked?: boolean } | null;
+      const checked = !!target?.checked;
+      setOptions((prev) => ({ ...prev, [key]: checked }));
+    };
 
   const handleGenerate = () => {
     setPreview(generateLlmsTxt(options));
@@ -149,7 +155,10 @@ export default function Generate() {
             name="content"
             rows={20}
             value={preview}
-            onChange={(event: any) => setPreview(event?.target?.value ?? "")}
+            onChange={(event: CallbackEvent<"s-text-area">) => {
+              const target = event?.target as unknown as { value?: string } | null;
+              setPreview(String(target?.value ?? ""));
+            }}
           />
 
           <s-stack direction="inline" gap="base">
