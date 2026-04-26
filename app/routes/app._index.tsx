@@ -11,7 +11,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Index() {
   const { shop } = useLoaderData<typeof loader>();
 
-  const llmsUrl = `https://${shop}/llms.txt`;
+  const llmsUrl = `https://${shop}/a/llms-txt`;
 
   return (
     <s-page heading="AEO Optimizer">

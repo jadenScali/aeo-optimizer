@@ -1,6 +1,6 @@
-import { useState } from "react";
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { useEffect, useState } from "react";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -37,14 +37,79 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { shop: session.shop };
 };
 
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const content = String(formData.get("content") ?? "");
+
+  const shopRes = await admin.graphql(`#graphql
+    query { shop { id } }
+  `);
+  const { data: shopData } = await shopRes.json();
+
+  // Save metafield and create the /llms.txt → /a/llms-txt redirect in parallel
+  const [metafieldRes, redirectRes] = await Promise.all([
+    admin.graphql(
+      `#graphql
+      mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          metafields { id }
+          userErrors { field message }
+        }
+      }`,
+      {
+        variables: {
+          metafields: [
+            {
+              namespace: "aeo_optimizer",
+              key: "llms_txt",
+              type: "multi_line_text_field",
+              value: content,
+              ownerId: shopData.shop.id,
+            },
+          ],
+        },
+      }
+    ),
+    admin.graphql(
+      `#graphql
+      mutation UrlRedirectCreate($urlRedirect: UrlRedirectInput!) {
+        urlRedirectCreate(urlRedirect: $urlRedirect) {
+          urlRedirect { id }
+          userErrors { field message }
+        }
+      }`,
+      { variables: { urlRedirect: { path: "/llms.txt", target: "/a/llms-txt" } } }
+    ),
+  ]);
+
+  const { data: metafieldData } = await metafieldRes.json();
+  const { data: redirectData } = await redirectRes.json();
+
+  const redirectErrors = (redirectData?.urlRedirectCreate?.userErrors ?? []).filter(
+    (e: { message: string }) => !e.message.toLowerCase().includes("already")
+  );
+  const errors = [...(metafieldData?.metafieldsSet?.userErrors ?? []), ...redirectErrors];
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true };
+};
+
 export default function Generate() {
   const { shop } = useLoaderData<typeof loader>();
-  const llmsUrl = `https://${shop}/llms.txt`;
+  const llmsUrl = `https://${shop}/a/llms-txt`;
 
   const [options, setOptions] = useState<Options>(DEFAULT_OPTIONS);
   const [stage, setStage] = useState<Stage>("options");
   const [preview, setPreview] = useState("");
-  const [publishing, setPublishing] = useState(false);
+
+  const fetcher = useFetcher<typeof action>();
+  const publishing = fetcher.state !== "idle";
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setStage("published");
+    }
+  }, [fetcher.state, fetcher.data]);
 
   const toggle = (key: keyof Options) => (event: Event) => {
     const checked = (event.currentTarget as unknown as { checked: boolean }).checked;
@@ -57,11 +122,7 @@ export default function Generate() {
   };
 
   const handlePublish = () => {
-    setPublishing(true);
-    setTimeout(() => {
-      setPublishing(false);
-      setStage("published");
-    }, 600);
+    fetcher.submit({ content: preview }, { method: "POST" });
   };
 
   const handleBackToOptions = () => setStage("options");
