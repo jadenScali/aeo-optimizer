@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -11,14 +10,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function Index() {
   const { shop } = useLoaderData<typeof loader>();
-  const [generating, setGenerating] = useState(false);
 
   const llmsUrl = `https://${shop}/llms.txt`;
-
-  const handleGenerate = () => {
-    setGenerating(true);
-    setTimeout(() => setGenerating(false), 800);
-  };
 
   return (
     <s-page heading="AEO Optimizer">
@@ -29,11 +22,7 @@ export default function Index() {
           it will be served at <s-text>/llms.txt</s-text>.
         </s-paragraph>
         <s-stack direction="inline" gap="base">
-          <s-button
-            variant="primary"
-            onClick={handleGenerate}
-            {...(generating ? { loading: true } : {})}
-          >
+          <s-button variant="primary" href="/app/generate">
             Generate llms.txt
           </s-button>
           <s-button href={llmsUrl} target="_blank">
