@@ -22,14 +22,95 @@ const DEFAULT_OPTIONS: Options = {
   linkSitemap: true,
 };
 
-function generateLlmsTxt(options: Options): string {
-  return [
-    `includeCollections: ${options.includeCollections}`,
-    `includeProducts: ${options.includeProducts}`,
-    `includePages: ${options.includePages}`,
-    `linkRobots: ${options.linkRobots}`,
-    `linkSitemap: ${options.linkSitemap}`,
-  ].join("\n");
+type Shop = { name: string; myshopifyDomain: string };
+type Collection = { handle: string; title: string };
+type Money = { amount: string; currencyCode: string };
+type Product = {
+  handle: string;
+  title: string;
+  description: string | null;
+  tags: string[];
+  publishedAt: string | null;
+  updatedAt: string;
+  variants: { nodes: Array<{ sku: string | null }> };
+  priceRangeV2: { minVariantPrice: Money } | null;
+};
+type Page = { handle: string; title: string; body: string | null };
+
+const stripHtml = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const truncate = (text: string, max = 150) =>
+  text.length <= max ? text : text.slice(0, max) + "...";
+
+const ymd = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : null);
+
+function buildLlmsTxt(
+  shop: Shop,
+  collections: Collection[],
+  products: Product[],
+  pages: Page[],
+  options: Options
+): string {
+  const base = `https://${shop.myshopifyDomain}`;
+  const out: string[] = [`# [${shop.name}](${base})`, ""];
+
+  if (options.includeCollections && collections.length) {
+    out.push("## Collections");
+    for (const c of collections) {
+      out.push(`- [${c.title}](${base}/collections/${c.handle})`);
+    }
+    out.push("");
+  }
+
+  if (options.includeProducts && products.length) {
+    out.push("## Products");
+    for (const p of products) {
+      const meta: string[] = [];
+      const description = p.description?.replace(/\s+/g, " ").trim();
+      if (description) meta.push(truncate(description));
+      const sku = p.variants?.nodes?.[0]?.sku?.trim();
+      if (sku) meta.push(`sku ${sku}`);
+      const price = p.priceRangeV2?.minVariantPrice;
+      if (price) meta.push(`price ${price.amount} ${price.currencyCode}`);
+      if (p.tags?.length) meta.push(`tags ${p.tags.join(", ")}`);
+      const published = ymd(p.publishedAt);
+      if (published) meta.push(`published ${published}`);
+      const updated = ymd(p.updatedAt);
+      if (updated) meta.push(`updated ${updated}`);
+      const suffix = meta.length ? `: ${meta.join(" | ")}` : "";
+      out.push(`- [${p.title}](${base}/products/${p.handle})${suffix}`);
+    }
+    out.push("");
+  }
+
+  if (options.includePages && pages.length) {
+    out.push("## Pages");
+    for (const pg of pages) {
+      const text = pg.body ? truncate(stripHtml(pg.body)) : "";
+      const suffix = text ? `: ${text}` : "";
+      out.push(`- [${pg.title}](${base}/pages/${pg.handle})${suffix}`);
+    }
+    out.push("");
+  }
+
+  if (options.linkRobots || options.linkSitemap) {
+    out.push("## Rules");
+    if (options.linkRobots) out.push(`- [robots.txt](${base}/robots.txt)`);
+    if (options.linkSitemap) out.push(`- [sitemap.xml](${base}/sitemap.xml)`);
+    out.push("");
+  }
+
+  return out.join("\n").trimEnd() + "\n";
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -40,6 +121,64 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
   const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  if (intent === "generate") {
+    const options: Options = {
+      includeCollections: formData.get("includeCollections") === "true",
+      includeProducts: formData.get("includeProducts") === "true",
+      includePages: formData.get("includePages") === "true",
+      linkRobots: formData.get("linkRobots") === "true",
+      linkSitemap: formData.get("linkSitemap") === "true",
+    };
+
+    const res = await admin.graphql(
+      `#graphql
+      query StoreContent(
+        $includeCollections: Boolean!
+        $includeProducts: Boolean!
+        $includePages: Boolean!
+      ) {
+        shop { name myshopifyDomain }
+        collections(first: 250) @include(if: $includeCollections) {
+          nodes { handle title }
+        }
+        products(first: 250, query: "status:active") @include(if: $includeProducts) {
+          nodes {
+            handle
+            title
+            description
+            tags
+            publishedAt
+            updatedAt
+            variants(first: 1) { nodes { sku } }
+            priceRangeV2 { minVariantPrice { amount currencyCode } }
+          }
+        }
+        pages(first: 250) @include(if: $includePages) {
+          nodes { handle title body }
+        }
+      }`,
+      {
+        variables: {
+          includeCollections: options.includeCollections,
+          includeProducts: options.includeProducts,
+          includePages: options.includePages,
+        },
+      }
+    );
+
+    const { data } = await res.json();
+    const content = buildLlmsTxt(
+      data.shop,
+      data.collections?.nodes ?? [],
+      data.products?.nodes ?? [],
+      data.pages?.nodes ?? [],
+      options
+    );
+    return { ok: true as const, intent: "generate" as const, content };
+  }
+
   const content = String(formData.get("content") ?? "");
 
   const shopRes = await admin.graphql(`#graphql
@@ -47,7 +186,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   `);
   const { data: shopData } = await shopRes.json();
 
-  // Save metafield and create the /llms.txt → /a/llms-txt redirect in parallel
   const [metafieldRes, redirectRes] = await Promise.all([
     admin.graphql(
       `#graphql
@@ -90,8 +228,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     (e: { message: string }) => !e.message.toLowerCase().includes("already")
   );
   const errors = [...(metafieldData?.metafieldsSet?.userErrors ?? []), ...redirectErrors];
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true };
+  if (errors.length > 0) return { ok: false as const, intent: "publish" as const, errors };
+  return { ok: true as const, intent: "publish" as const };
 };
 
 export default function Generate() {
@@ -103,10 +241,19 @@ export default function Generate() {
   const [preview, setPreview] = useState("");
 
   const fetcher = useFetcher<typeof action>();
-  const publishing = fetcher.state !== "idle";
+  const submittingIntent =
+    fetcher.state !== "idle"
+      ? (fetcher.formData?.get("intent") as "generate" | "publish" | null)
+      : null;
+  const generating = submittingIntent === "generate";
+  const publishing = submittingIntent === "publish";
 
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) {
+    if (fetcher.state !== "idle" || !fetcher.data?.ok) return;
+    if (fetcher.data.intent === "generate" && fetcher.data.content) {
+      setPreview(fetcher.data.content);
+      setStage("preview");
+    } else if (fetcher.data.intent === "publish") {
       setStage("published");
     }
   }, [fetcher.state, fetcher.data]);
@@ -117,12 +264,21 @@ export default function Generate() {
   };
 
   const handleGenerate = () => {
-    setPreview(generateLlmsTxt(options));
-    setStage("preview");
+    fetcher.submit(
+      {
+        intent: "generate",
+        includeCollections: String(options.includeCollections),
+        includeProducts: String(options.includeProducts),
+        includePages: String(options.includePages),
+        linkRobots: String(options.linkRobots),
+        linkSitemap: String(options.linkSitemap),
+      },
+      { method: "POST" }
+    );
   };
 
   const handlePublish = () => {
-    fetcher.submit({ content: preview }, { method: "POST" });
+    fetcher.submit({ intent: "publish", content: preview }, { method: "POST" });
   };
 
   const handleBackToOptions = () => setStage("options");
@@ -199,7 +355,11 @@ export default function Generate() {
             </s-stack>
 
             <s-stack direction="inline" gap="base">
-              <s-button variant="primary" onClick={handleGenerate}>
+              <s-button
+                variant="primary"
+                onClick={handleGenerate}
+                {...(generating ? { loading: true } : {})}
+              >
                 Generate
               </s-button>
               <s-button href="/app">Cancel</s-button>
