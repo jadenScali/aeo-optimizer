@@ -132,51 +132,111 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       linkSitemap: formData.get("linkSitemap") === "true",
     };
 
-    const res = await admin.graphql(
-      `#graphql
-      query StoreContent(
-        $includeCollections: Boolean!
-        $includeProducts: Boolean!
-        $includePages: Boolean!
-      ) {
-        shop { name myshopifyDomain }
-        collections(first: 250) @include(if: $includeCollections) {
-          nodes { handle title }
-        }
-        products(first: 250, query: "status:active") @include(if: $includeProducts) {
-          nodes {
-            handle
-            title
-            description
-            tags
-            publishedAt
-            updatedAt
-            variants(first: 1) { nodes { sku } }
-            priceRangeV2 { minVariantPrice { amount currencyCode } }
-          }
-        }
-        pages(first: 250) @include(if: $includePages) {
-          nodes { handle title body }
-        }
-      }`,
-      {
-        variables: {
-          includeCollections: options.includeCollections,
-          includeProducts: options.includeProducts,
-          includePages: options.includePages,
-        },
-      }
-    );
+    // Keep this fast for MVP: avoid large stores making the action feel stuck.
+    const FIRST = 50;
 
-    const { data } = await res.json();
+    let data: {
+      shop: Shop;
+      collections?: { nodes: Collection[] };
+      products?: { nodes: Product[] };
+    };
+
+    try {
+      const res = await admin.graphql(
+        `#graphql
+        query StoreContent(
+          $includeCollections: Boolean!
+          $includeProducts: Boolean!
+          $first: Int!
+        ) {
+          shop { name myshopifyDomain }
+          collections(first: $first) @include(if: $includeCollections) {
+            nodes { handle title }
+          }
+          products(first: $first, query: "status:active") @include(if: $includeProducts) {
+            nodes {
+              handle
+              title
+              description
+              tags
+              publishedAt
+              updatedAt
+              variants(first: 1) { nodes { sku } }
+              priceRangeV2 { minVariantPrice { amount currencyCode } }
+            }
+          }
+        }`,
+        {
+          variables: {
+            includeCollections: options.includeCollections,
+            includeProducts: options.includeProducts,
+            first: FIRST,
+          },
+        },
+      );
+
+      const json = (await res.json()) as {
+        data: typeof data;
+        errors?: { message: string }[];
+      };
+      if (json.errors?.length) {
+        return {
+          ok: false as const,
+          intent: "generate" as const,
+          errors: json.errors.map((e) => e.message),
+        };
+      }
+      data = json.data;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return {
+        ok: false as const,
+        intent: "generate" as const,
+        errors: [msg],
+      };
+    }
+
+    let pageNodes: Page[] = [];
+    let pagesWarning: string | undefined;
+    if (options.includePages) {
+      try {
+        const pRes = await admin.graphql(
+          `#graphql
+          query StorePages {
+            pages(first: 50) {
+              nodes { handle title body }
+            }
+          }`,
+          {},
+        );
+        const pJson = (await pRes.json()) as {
+          data?: { pages?: { nodes: Page[] } };
+          errors?: { message: string }[];
+        };
+        if (pJson.errors?.length) {
+          pagesWarning = `Pages were skipped: ${pJson.errors.map((e) => e.message).join("; ")}. Grant read_online_store_pages or read_content and reinstall the app.`;
+        } else {
+          pageNodes = pJson.data?.pages?.nodes ?? [];
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        pagesWarning = `Pages were skipped (${msg}). Grant read_online_store_pages or read_content and reinstall the app.`;
+      }
+    }
+
     const content = buildLlmsTxt(
       data.shop,
       data.collections?.nodes ?? [],
       data.products?.nodes ?? [],
-      data.pages?.nodes ?? [],
+      pageNodes,
       options
     );
-    return { ok: true as const, intent: "generate" as const, content };
+    return {
+      ok: true as const,
+      intent: "generate" as const,
+      content,
+      ...(pagesWarning ? { pagesWarning } : {}),
+    };
   }
 
   const content = String(formData.get("content") ?? "");
@@ -186,30 +246,37 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   `);
   const { data: shopData } = await shopRes.json();
 
-  const [metafieldRes, redirectRes] = await Promise.all([
-    admin.graphql(
-      `#graphql
-      mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafields) {
-          metafields { id }
-          userErrors { field message }
-        }
-      }`,
-      {
-        variables: {
-          metafields: [
-            {
-              namespace: "aeo_optimizer",
-              key: "llms_txt",
-              type: "multi_line_text_field",
-              value: content,
-              ownerId: shopData.shop.id,
-            },
-          ],
-        },
+  const metafieldRes = await admin.graphql(
+    `#graphql
+    mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { id }
+        userErrors { field message }
       }
-    ),
-    admin.graphql(
+    }`,
+    {
+      variables: {
+        metafields: [
+          {
+            namespace: "aeo_optimizer",
+            key: "llms_txt",
+            type: "multi_line_text_field",
+            value: content,
+            ownerId: shopData.shop.id,
+          },
+        ],
+      },
+    },
+  );
+
+  // Optional: create a redirect /llms.txt -> /a/llms-txt. This requires
+  // write_online_store_navigation; if missing, publishing should still succeed.
+  let redirectWarning: string | undefined;
+  let redirectRes:
+    | Response
+    | undefined;
+  try {
+    redirectRes = await admin.graphql(
       `#graphql
       mutation UrlRedirectCreate($urlRedirect: UrlRedirectInput!) {
         urlRedirectCreate(urlRedirect: $urlRedirect) {
@@ -217,19 +284,40 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           userErrors { field message }
         }
       }`,
-      { variables: { urlRedirect: { path: "/llms.txt", target: "/a/llms-txt" } } }
-    ),
-  ]);
+      { variables: { urlRedirect: { path: "/llms.txt", target: "/a/llms-txt" } } },
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    redirectWarning = msg.includes("write_online_store_navigation")
+      ? "Redirect not created (missing write_online_store_navigation). Publish still succeeded."
+      : `Redirect not created (${msg}). Publish still succeeded.`;
+  }
 
   const { data: metafieldData } = await metafieldRes.json();
-  const { data: redirectData } = await redirectRes.json();
+  const metafieldErrors = metafieldData?.metafieldsSet?.userErrors ?? [];
+  if (metafieldErrors.length > 0) {
+    return {
+      ok: false as const,
+      intent: "publish" as const,
+      errors: metafieldErrors,
+    };
+  }
 
-  const redirectErrors = (redirectData?.urlRedirectCreate?.userErrors ?? []).filter(
-    (e: { message: string }) => !e.message.toLowerCase().includes("already")
-  );
-  const errors = [...(metafieldData?.metafieldsSet?.userErrors ?? []), ...redirectErrors];
-  if (errors.length > 0) return { ok: false as const, intent: "publish" as const, errors };
-  return { ok: true as const, intent: "publish" as const };
+  if (redirectRes) {
+    const { data: redirectData } = await redirectRes.json();
+    const redirectErrors = (redirectData?.urlRedirectCreate?.userErrors ?? []).filter(
+      (e: { message: string }) => !e.message.toLowerCase().includes("already"),
+    );
+    if (redirectErrors.length > 0) {
+      redirectWarning = redirectErrors.map((e: { message: string }) => e.message).join("; ");
+    }
+  }
+
+  return {
+    ok: true as const,
+    intent: "publish" as const,
+    ...(redirectWarning ? { redirectWarning } : {}),
+  };
 };
 
 export default function Generate() {
@@ -249,11 +337,14 @@ export default function Generate() {
   const publishing = submittingIntent === "publish";
 
   useEffect(() => {
-    if (fetcher.state !== "idle" || !fetcher.data?.ok) return;
-    if (fetcher.data.intent === "generate" && fetcher.data.content) {
-      setPreview(fetcher.data.content);
-      setStage("preview");
-    } else if (fetcher.data.intent === "publish") {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    if (fetcher.data.intent === "generate") {
+      if (!fetcher.data.ok) return;
+      if (fetcher.data.content) {
+        setPreview(fetcher.data.content);
+        setStage("preview");
+      }
+    } else if (fetcher.data.intent === "publish" && fetcher.data.ok) {
       setStage("published");
     }
   }, [fetcher.state, fetcher.data]);
@@ -354,6 +445,14 @@ export default function Generate() {
               </s-stack>
             </s-stack>
 
+            {fetcher.data?.intent === "generate" &&
+            fetcher.data.ok === false &&
+            "errors" in fetcher.data &&
+            fetcher.data.errors?.length ? (
+              <s-banner heading="Generate failed" tone="critical">
+                {fetcher.data.errors.join(" ")}
+              </s-banner>
+            ) : null}
             <s-stack direction="inline" gap="base">
               <s-button
                 variant="primary"
@@ -371,6 +470,14 @@ export default function Generate() {
       {stage === "preview" && (
         <s-section>
           <s-stack direction="block" gap="large">
+            {fetcher.data?.ok &&
+            fetcher.data.intent === "generate" &&
+            "pagesWarning" in fetcher.data &&
+            fetcher.data.pagesWarning ? (
+              <s-banner heading="Pages not included" tone="warning">
+                {fetcher.data.pagesWarning}
+              </s-banner>
+            ) : null}
             <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700 }}>
               llms.txt
             </h3>
@@ -410,6 +517,14 @@ export default function Generate() {
             <s-banner heading="llms.txt published" tone="success">
               Your <s-text>llms.txt</s-text> is now live on your storefront.
             </s-banner>
+            {fetcher.data?.ok &&
+            fetcher.data.intent === "publish" &&
+            "redirectWarning" in fetcher.data &&
+            fetcher.data.redirectWarning ? (
+              <s-banner heading="Redirect not created" tone="warning">
+                {fetcher.data.redirectWarning}
+              </s-banner>
+            ) : null}
 
             <s-stack direction="inline" gap="base">
               <s-button variant="primary" href={llmsUrl} target="_blank">
