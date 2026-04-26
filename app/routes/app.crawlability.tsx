@@ -7,7 +7,8 @@ import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
-import { runCrawlabilityAudit } from "../services/crawlability.server";
+import type { ContentScoreReport } from "../services/content-score.server";
+import { runContentScoreAudit } from "../services/content-score.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -15,108 +16,118 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-
-  const audit = await runCrawlabilityAudit({
-    shopDomain: session.shop,
-    includeUaVariance: true,
-  });
-
-  return audit;
+  const { admin } = await authenticate.admin(request);
+  return runContentScoreAudit(admin);
 };
 
-function JsonBox({ value }: { value: unknown }) {
+function CategoryBlock({
+  category,
+}: {
+  category: ContentScoreReport["categories"]["contentClarity"];
+}) {
   return (
-    <s-box
-      padding="base"
-      borderWidth="base"
-      borderRadius="base"
-      background="subdued"
-    >
-      <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        <code>{JSON.stringify(value, null, 2)}</code>
-      </pre>
-    </s-box>
+    <s-stack direction="block" gap="base">
+      <s-paragraph>
+        <s-text>
+          Score: {category.score}/{category.max}
+        </s-text>
+      </s-paragraph>
+      {category.issues.length > 0 ? (
+        <s-unordered-list>
+          {category.issues.map((item) => (
+            <s-list-item key={item.issue}>
+              <strong>{item.issue}</strong>
+              <s-paragraph>{item.recommendation}</s-paragraph>
+            </s-list-item>
+          ))}
+        </s-unordered-list>
+      ) : (
+        <s-paragraph>No major gaps flagged in this category.</s-paragraph>
+      )}
+    </s-stack>
   );
 }
 
-export default function Crawlability() {
+export default function ContentScorePage() {
   const { shop } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
   const isRunning = ["loading", "submitting"].includes(fetcher.state);
-  const runTest = () => fetcher.submit({}, { method: "POST" });
+  const runScore = () => fetcher.submit({}, { method: "POST" });
+
+  const data = fetcher.data;
 
   return (
-    <s-page heading="Crawlability test (beta)">
-      <s-button slot="primary-action" onClick={runTest} disabled={isRunning}>
-        {isRunning ? "Running…" : "Run test"}
+    <s-page heading="Content score">
+      <s-button slot="primary-action" onClick={runScore} disabled={isRunning}>
+        {isRunning ? "Scoring…" : "Run score"}
       </s-button>
 
       <s-section heading="What this does">
         <s-paragraph>
-          Runs a storefront crawlability audit for <s-text>{shop}</s-text>:
-          robots.txt checks, sitemap discovery, sample HTML fetches (password
-          walls, noindex/X-Robots-Tag, structured data), plus optional user-agent
-          variance checks for common AI crawler UAs.
+          Scores storefront content signals for <s-text>{shop}</s-text> using
+          product descriptions and online store pages (sample). Higher scores
+          suggest clearer structure for humans and AI summaries.
         </s-paragraph>
       </s-section>
 
-      <s-section heading="Overall result">
-        {fetcher.data ? (
-          <s-stack direction="block" gap="base">
-            <s-heading>Score: {fetcher.data.overallScore}/100</s-heading>
-
-            {fetcher.data.blockingIssues?.length ? (
-              <s-banner heading="Blocking issues" tone="warning">
-                <s-unordered-list>
-                  {fetcher.data.blockingIssues.map((issue: string) => (
-                    <s-list-item key={issue}>{issue}</s-list-item>
-                  ))}
-                </s-unordered-list>
-              </s-banner>
-            ) : (
-              <s-banner heading="No blocking issues detected" tone="success" />
-            )}
-          </s-stack>
+      <s-section heading="Overall">
+        {!data ? (
+          <s-paragraph>Click “Run score” to analyze your catalog.</s-paragraph>
+        ) : !data.ok ? (
+          <s-banner heading="Could not load data" tone="critical">
+            {data.error ?? "Unknown error"}
+            <s-paragraph>
+              Ensure the app has <s-text>read_products</s-text> and page access
+              (<s-text>read_online_store_pages</s-text> or{" "}
+              <s-text>read_content</s-text>), then reinstall so the token
+              includes new scopes.
+            </s-paragraph>
+          </s-banner>
         ) : (
-          <s-paragraph>Click “Run test” to generate report.</s-paragraph>
+          <s-stack direction="block" gap="base">
+            <s-heading>
+              Total: {data.total}/100
+            </s-heading>
+            {data.warnings?.length ? (
+              <s-banner heading="Partial data" tone="warning">
+                {data.warnings.map((w) => (
+                  <s-paragraph key={w}>{w}</s-paragraph>
+                ))}
+              </s-banner>
+            ) : null}
+            <s-paragraph>
+              Based on {data.meta.productCount} product(s) and{" "}
+              {data.meta.pageCount} page(s) from the Admin API.
+            </s-paragraph>
+          </s-stack>
         )}
       </s-section>
 
-      {fetcher.data && (
+      {data?.ok && (
         <>
-          <s-section heading="Robots.txt">
-            <s-stack direction="block" gap="base">
-              <s-paragraph>
-                <s-text>Fetched: </s-text>
-                <s-link href={fetcher.data.robots.url} target="_blank">
-                  {fetcher.data.robots.url}
-                </s-link>
-                <s-text> (HTTP {fetcher.data.robots.status})</s-text>
-              </s-paragraph>
-              <JsonBox value={fetcher.data.robots.aiBotAccess} />
-            </s-stack>
+          <s-section heading="Content clarity (0–25)">
+            <CategoryBlock category={data.categories.contentClarity} />
           </s-section>
-
-          <s-section heading="Sitemaps (discovered)">
-            <JsonBox value={fetcher.data.sitemaps.discovered} />
+          <s-section heading="Structure (0–25)">
+            <CategoryBlock category={data.categories.structure} />
           </s-section>
-
-          <s-section heading="Sample fetches">
-            <JsonBox value={fetcher.data.samples} />
+          <s-section heading="Crawlability (0–20)">
+            <CategoryBlock category={data.categories.crawlability} />
           </s-section>
-
-          <s-section heading="User-agent variance (AI bot UAs)">
-            <JsonBox value={fetcher.data.uaVariance} />
+          <s-section heading="Entity strength (0–15)">
+            <CategoryBlock category={data.categories.entityStrength} />
+          </s-section>
+          <s-section heading="Completeness (0–15)">
+            <CategoryBlock category={data.categories.completeness} />
           </s-section>
         </>
       )}
 
       <s-section slot="aside" heading="Notes">
         <s-paragraph>
-          These checks indicate accessibility signals only; they do not guarantee
-          indexing by any vendor.
+          MVP heuristic scoring only; tune rules and weights as you learn what
+          predicts good AEO outcomes for your merchants.
         </s-paragraph>
       </s-section>
     </s-page>
@@ -126,4 +137,3 @@ export default function Crawlability() {
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-

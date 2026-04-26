@@ -21,7 +21,7 @@ export default function App() {
       <NavMenu>
         <a href="/app" rel="home">Home</a>
         <a href="/app/generate">Generate</a>
-        <a href="/app/crawlability">Crawlability test</a>
+        <a href="/app/crawlability">Content score</a>
         <a href="/app/additional">AI traffic</a>
       </NavMenu>
       <Outlet />

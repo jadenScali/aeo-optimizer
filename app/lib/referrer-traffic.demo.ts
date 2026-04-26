@@ -11,6 +11,23 @@ export type ReferrerDayRow = {
   searchgpt: number;
 };
 
+export type ReferrerDayTotalRow = {
+  date: string;
+  total: number;
+};
+
+export function referrerRowsToTotals(rows: ReferrerDayRow[]): ReferrerDayTotalRow[] {
+  return rows.map((r) => ({
+    date: r.date,
+    total:
+      r.chatgpt +
+      r.claude +
+      r.perplexity +
+      r.gemini +
+      r.searchgpt,
+  }));
+}
+
 export function buildDemoReferrerSeries(dayCount = 30): ReferrerDayRow[] {
   const rows: ReferrerDayRow[] = [];
   const end = new Date();

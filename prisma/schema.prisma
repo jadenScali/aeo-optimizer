@@ -32,3 +32,18 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+/// Daily aggregate of AI-classified storefront hits (via app proxy ingest).
+model AiReferrerDailyStat {
+  id        String   @id @default(cuid())
+  shop      String
+  /// UTC calendar date YYYY-MM-DD
+  day       String
+  /// chatgpt | claude | perplexity | gemini | searchgpt
+  platform  String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([shop, day, platform])
+  @@index([shop, day])
+}
