@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -9,7 +10,10 @@ import {
   YAxis,
 } from "recharts";
 
-import type { ReferrerDayRow } from "../lib/referrer-traffic.demo";
+import {
+  referrerRowsToTotals,
+  type ReferrerDayRow,
+} from "../lib/referrer-traffic.demo";
 
 const SERIES = [
   { key: "chatgpt", label: "ChatGPT", color: "#14b8a6" },
@@ -84,18 +88,28 @@ function ReferrerTooltip({
 
 const DEFAULT_CHART_HEIGHT = 400;
 
+const TOTAL_LINE_COLOR = "#0f766e";
+
 /** Use a fixed height: percentage height inside `ResponsiveContainer` stays 0 when the parent only has `min-height`. */
 export function AiReferrerTrafficChart({
   data,
   height = DEFAULT_CHART_HEIGHT,
+  showTotalOnly = false,
 }: {
   data: ReferrerDayRow[];
   height?: number;
+  /** When true, one series = sum of all AI platforms per day. */
+  showTotalOnly?: boolean;
 }) {
+  const chartData = useMemo(
+    () => (showTotalOnly ? referrerRowsToTotals(data) : data),
+    [data, showTotalOnly],
+  );
+
   return (
     <ResponsiveContainer width="100%" height={height}>
       <LineChart
-        data={data}
+        data={chartData}
         margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
       >
         <CartesianGrid
@@ -116,34 +130,53 @@ export function AiReferrerTrafficChart({
           tick={{ fontSize: 11, fill: "#6d7175" }}
           tickLine={false}
           axisLine={false}
-          width={36}
+          width={showTotalOnly ? 44 : 36}
         />
         <Tooltip content={<ReferrerTooltip />} />
-        <Legend
-          align="center"
-          verticalAlign="bottom"
-          wrapperStyle={{ paddingTop: 16 }}
-          formatter={(value) => (
-            <span style={{ color: "#202223", fontSize: 12 }}>{value}</span>
-          )}
-        />
-        {SERIES.map((s) => (
+        {!showTotalOnly && (
+          <Legend
+            align="center"
+            verticalAlign="bottom"
+            wrapperStyle={{ paddingTop: 16 }}
+            formatter={(value) => (
+              <span style={{ color: "#202223", fontSize: 12 }}>{value}</span>
+            )}
+          />
+        )}
+        {showTotalOnly ? (
           <Line
-            key={s.key}
             type="monotone"
-            dataKey={s.key}
-            name={s.label}
-            stroke={s.color}
+            dataKey="total"
+            name="All AI referrals"
+            stroke={TOTAL_LINE_COLOR}
             strokeWidth={2}
             dot={{
               r: 3,
               fill: "#fff",
-              stroke: s.color,
+              stroke: TOTAL_LINE_COLOR,
               strokeWidth: 2,
             }}
             activeDot={{ r: 4, strokeWidth: 2 }}
           />
-        ))}
+        ) : (
+          SERIES.map((s) => (
+            <Line
+              key={s.key}
+              type="monotone"
+              dataKey={s.key}
+              name={s.label}
+              stroke={s.color}
+              strokeWidth={2}
+              dot={{
+                r: 3,
+                fill: "#fff",
+                stroke: s.color,
+                strokeWidth: 2,
+              }}
+              activeDot={{ r: 4, strokeWidth: 2 }}
+            />
+          ))
+        )}
       </LineChart>
     </ResponsiveContainer>
   );
