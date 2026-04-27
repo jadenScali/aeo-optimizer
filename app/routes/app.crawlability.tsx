@@ -50,7 +50,7 @@ function CategoryBlock({
 }
 
 export default function ContentScorePage() {
-  const { shop } = useLoaderData<typeof loader>();
+  useLoaderData<typeof loader>();
   const location = useLocation();
   const fetcher = useFetcher<typeof action>();
 
@@ -74,9 +74,7 @@ export default function ContentScorePage() {
     <s-page heading="Content score">
       <s-section heading="What this does">
         <s-paragraph>
-          Scores storefront content signals for <s-text>{shop}</s-text> using
-          product descriptions and online store pages (sample). Higher scores
-          suggest clearer structure for humans and AI summaries.
+        Analyzes your product descriptions and store pages, scoring them on clarity and structure. Higher scores mean your content is more understandable to readers and AI systems alike.
         </s-paragraph>
       </s-section>
 
@@ -137,13 +135,6 @@ export default function ContentScorePage() {
           </s-section>
         </>
       )}
-
-      <s-section slot="aside" heading="Notes">
-        <s-paragraph>
-          MVP heuristic scoring only; tune rules and weights as you learn what
-          predicts good AEO outcomes for your merchants.
-        </s-paragraph>
-      </s-section>
     </s-page>
   );
 }

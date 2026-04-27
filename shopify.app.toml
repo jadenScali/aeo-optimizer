@@ -3,7 +3,7 @@
 client_id = "3016229c557dc4817f776a4ac95154bd"
 application_url = "https://example.com"
 embedded = true
-name = "aeo_optimizer"
+name = "AEO Optimizer"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
