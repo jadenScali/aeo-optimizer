@@ -1,0 +1,139 @@
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+
+import { authenticate } from "../shopify.server";
+import type { ContentScoreReport } from "../services/content-score.server";
+import { runContentScoreAudit } from "../services/content-score.server";
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  return { shop: session.shop };
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin } = await authenticate.admin(request);
+  return runContentScoreAudit(admin);
+};
+
+function CategoryBlock({
+  category,
+}: {
+  category: ContentScoreReport["categories"]["contentClarity"];
+}) {
+  return (
+    <s-stack direction="block" gap="base">
+      <s-paragraph>
+        <s-text>
+          Score: {category.score}/{category.max}
+        </s-text>
+      </s-paragraph>
+      {category.issues.length > 0 ? (
+        <s-unordered-list>
+          {category.issues.map((item) => (
+            <s-list-item key={item.issue}>
+              <strong>{item.issue}</strong>
+              <s-paragraph>{item.recommendation}</s-paragraph>
+            </s-list-item>
+          ))}
+        </s-unordered-list>
+      ) : (
+        <s-paragraph>No major gaps flagged in this category.</s-paragraph>
+      )}
+    </s-stack>
+  );
+}
+
+export default function ContentScorePage() {
+  const { shop } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher<typeof action>();
+
+  const isRunning = ["loading", "submitting"].includes(fetcher.state);
+  const runScore = () => fetcher.submit({}, { method: "POST" });
+
+  const data = fetcher.data;
+
+  return (
+    <s-page heading="Content score">
+      <s-button slot="primary-action" onClick={runScore} disabled={isRunning}>
+        {isRunning ? "Scoring…" : "Run score"}
+      </s-button>
+
+      <s-section heading="What this does">
+        <s-paragraph>
+          Scores storefront content signals for <s-text>{shop}</s-text> using
+          product descriptions and online store pages (sample). Higher scores
+          suggest clearer structure for humans and AI summaries.
+        </s-paragraph>
+      </s-section>
+
+      <s-section heading="Overall">
+        {!data ? (
+          <s-paragraph>Click “Run score” to analyze your catalog.</s-paragraph>
+        ) : !data.ok ? (
+          <s-banner heading="Could not load data" tone="critical">
+            {data.error ?? "Unknown error"}
+            <s-paragraph>
+              Ensure the app has <s-text>read_products</s-text> and page access
+              (<s-text>read_online_store_pages</s-text> or{" "}
+              <s-text>read_content</s-text>), then reinstall so the token
+              includes new scopes.
+            </s-paragraph>
+          </s-banner>
+        ) : (
+          <s-stack direction="block" gap="base">
+            <s-heading>
+              Total: {data.total}/100
+            </s-heading>
+            {data.warnings?.length ? (
+              <s-banner heading="Partial data" tone="warning">
+                {data.warnings.map((w) => (
+                  <s-paragraph key={w}>{w}</s-paragraph>
+                ))}
+              </s-banner>
+            ) : null}
+            <s-paragraph>
+              Based on {data.meta.productCount} product(s) and{" "}
+              {data.meta.pageCount} page(s) from the Admin API.
+            </s-paragraph>
+          </s-stack>
+        )}
+      </s-section>
+
+      {data?.ok && (
+        <>
+          <s-section heading="Content clarity (0–25)">
+            <CategoryBlock category={data.categories.contentClarity} />
+          </s-section>
+          <s-section heading="Structure (0–25)">
+            <CategoryBlock category={data.categories.structure} />
+          </s-section>
+          <s-section heading="Crawlability (0–20)">
+            <CategoryBlock category={data.categories.crawlability} />
+          </s-section>
+          <s-section heading="Entity strength (0–15)">
+            <CategoryBlock category={data.categories.entityStrength} />
+          </s-section>
+          <s-section heading="Completeness (0–15)">
+            <CategoryBlock category={data.categories.completeness} />
+          </s-section>
+        </>
+      )}
+
+      <s-section slot="aside" heading="Notes">
+        <s-paragraph>
+          MVP heuristic scoring only; tune rules and weights as you learn what
+          predicts good AEO outcomes for your merchants.
+        </s-paragraph>
+      </s-section>
+    </s-page>
+  );
+}
+
+export const headers: HeadersFunction = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};

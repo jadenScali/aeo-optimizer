@@ -349,8 +349,8 @@ export default function Generate() {
     }
   }, [fetcher.state, fetcher.data]);
 
-  const toggle = (key: keyof Options) => (event: Event) => {
-    const checked = (event.currentTarget as unknown as { checked: boolean }).checked;
+  const toggle = (key: keyof Options) => (event: any) => {
+    const checked: boolean = !!event?.target?.checked;
     setOptions((prev) => ({ ...prev, [key]: checked }));
   };
 
@@ -488,15 +488,13 @@ export default function Generate() {
               but AI platforms may or may not read it.
             </s-paragraph>
 
-            <s-text-area
-              label="llms.txt contents"
-              name="content"
-              rows={20}
-              value={preview}
-              onChange={(event: Event) =>
-                setPreview((event.currentTarget as unknown as { value: string }).value)
-              }
-            />
+          <s-text-area
+            label="llms.txt contents"
+            name="content"
+            rows={20}
+            value={preview}
+            onChange={(event: any) => setPreview(event?.target?.value ?? "")}
+          />
 
             <s-stack direction="inline" gap="base">
               <s-button
