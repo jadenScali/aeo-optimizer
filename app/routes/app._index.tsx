@@ -16,26 +16,72 @@ export default function Index() {
   return (
     <s-page heading="AEO Optimizer">
       <s-section>
-        <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700, marginBottom: "1rem" }}>
-          Optimize Now
+        <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700 }}>
+          Content score
         </h3>
         <s-paragraph>
-          Generate an llms.txt file for your storefront.
+          Analyze your product descriptions and pages for:
           <br />
           <br />
-          This is an experimental standard and not widely adopted yet, but it may help AI systems better understand and reference your site content in the future.
+<ul style={{ margin: 0, paddingLeft: "1.5em" }}>
+  <li>Clarity and readability</li>
+  <li>Logical structure and organization</li>
+  <li>Search engine crawlability</li>
+  <li>Answer Engine Optimization (AEO) performance</li>
+</ul>
           <br />
-          <br />
-          Once published, it will be available at /llms.txt.
+
+Optimize your content to rank better in AI search results and improve discoverability.
         </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button variant="primary" href="/app/generate">
-            Generate llms.txt
-          </s-button>
-          <s-button href={llmsUrl} target="_blank">
-            View llms.txt
-          </s-button>
-        </s-stack>
+        <div
+          style={{
+            border: "1px solid #e1e3e5",
+            borderRadius: 12,
+            padding: 16,
+            background: "#fff",
+          }}
+        >
+          <s-stack direction="inline" gap="base">
+            <s-button variant="primary" href="/app/crawlability?autorun=1">
+              Run score
+            </s-button>
+            <s-button href="/app/crawlability">View report</s-button>
+          </s-stack>
+        </div>
+      </s-section>
+
+      <s-section>
+        <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700 }}>
+          Generate llms.txt
+        </h3>
+        <s-paragraph>
+          Generate an <s-text>llms.txt</s-text> file for your storefront.
+          <br />
+          <br />
+          This is an experimental standard and not widely adopted yet, but it
+          may help AI systems better understand and reference your site content
+          in the future.
+          <br />
+          <br />
+          Once published, it will be available at <s-text>/llms.txt</s-text>.
+        </s-paragraph>
+        <div
+          style={{
+            border: "1px solid #e1e3e5",
+            borderRadius: 12,
+            padding: 16,
+            background: "#fff",
+          }}
+        >
+          <s-stack direction="inline" gap="base">
+            <s-button variant="primary" href="/app/generate">
+              Generate llms.txt
+            </s-button>
+            <s-button href={llmsUrl} target="_blank">
+              View llms.txt
+            </s-button>
+          </s-stack>
+        </div>
       </s-section>
     </s-page>
   );

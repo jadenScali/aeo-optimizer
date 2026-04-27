@@ -3,7 +3,8 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { useFetcher, useLoaderData, useLocation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import { authenticate } from "../shopify.server";
@@ -50,19 +51,27 @@ function CategoryBlock({
 
 export default function ContentScorePage() {
   const { shop } = useLoaderData<typeof loader>();
+  const location = useLocation();
   const fetcher = useFetcher<typeof action>();
 
   const isRunning = ["loading", "submitting"].includes(fetcher.state);
   const runScore = () => fetcher.submit({}, { method: "POST" });
 
   const data = fetcher.data;
+  const autorun = new URLSearchParams(location.search).get("autorun") === "1";
+
+  // If navigated from the home "Run score" card, kick off the audit automatically.
+  // Guarded to avoid loops while `fetcher` is already running.
+  useEffect(() => {
+    if (!autorun) return;
+    if (data) return;
+    if (fetcher.state !== "idle") return;
+    runScore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autorun]);
 
   return (
     <s-page heading="Content score">
-      <s-button slot="primary-action" onClick={runScore} disabled={isRunning}>
-        {isRunning ? "Scoring…" : "Run score"}
-      </s-button>
-
       <s-section heading="What this does">
         <s-paragraph>
           Scores storefront content signals for <s-text>{shop}</s-text> using
@@ -72,6 +81,11 @@ export default function ContentScorePage() {
       </s-section>
 
       <s-section heading="Overall">
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+          <s-button variant="primary" onClick={runScore} disabled={isRunning}>
+            {isRunning ? "Scoring…" : "Run score"}
+          </s-button>
+        </div>
         {!data ? (
           <s-paragraph>Click “Run score” to analyze your catalog.</s-paragraph>
         ) : !data.ok ? (

@@ -138,7 +138,7 @@ export function AiReferrerTrafficChart({
             align="center"
             verticalAlign="bottom"
             wrapperStyle={{ paddingTop: 16 }}
-            formatter={(value) => (
+            formatter={(value: string) => (
               <span style={{ color: "#202223", fontSize: 12 }}>{value}</span>
             )}
           />

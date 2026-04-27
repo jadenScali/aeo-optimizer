@@ -349,8 +349,11 @@ export default function Generate() {
     }
   }, [fetcher.state, fetcher.data]);
 
-  const toggle = (key: keyof Options) => (event: any) => {
-    const checked: boolean = !!event?.target?.checked;
+  type CheckedChangeEvent = { target?: { checked?: boolean } | null } | Event;
+
+  const toggle = (key: keyof Options) => (event: CheckedChangeEvent) => {
+    const target = (event as { target?: { checked?: boolean } | null }).target;
+    const checked: boolean = !!target?.checked;
     setOptions((prev) => ({ ...prev, [key]: checked }));
   };
 
@@ -380,39 +383,37 @@ export default function Generate() {
       {stage === "options" && (
         <s-section>
           <s-stack direction="block" gap="large-200">
-            <s-stack direction="block" gap="large">
+            <s-stack direction="block" gap="base">
               <h3 style={{ margin: 0, fontSize: "1.125rem", fontWeight: 700 }}>
                 What to include
               </h3>
               <s-paragraph>
                 Choose the storefront content you want to expose in your{" "}
-                <s-text>llms.txt</s-text>. Note: <s-text>llms.txt</s-text> is
-                not a guaranteed standard — some tools may ignore it entirely.
-                Consider it a best-effort hint for systems that opt in.
+                <s-text>llms.txt</s-text>.
               </s-paragraph>
-              <s-stack direction="block" gap="base">
-                <s-checkbox
-                  name="includeCollections"
-                  label="Include collections"
-                  details="Adds links to your storefront collections."
-                  checked={options.includeCollections}
-                  onChange={toggle("includeCollections")}
-                />
-                <s-checkbox
-                  name="includeProducts"
-                  label="Include products"
-                  details="Adds links to your active products."
-                  checked={options.includeProducts}
-                  onChange={toggle("includeProducts")}
-                />
-                <s-checkbox
-                  name="includePages"
-                  label="Include pages"
-                  details="Adds links to your storefront pages (about, FAQs, etc.)."
-                  checked={options.includePages}
-                  onChange={toggle("includePages")}
-                />
-              </s-stack>
+            </s-stack>
+            <s-stack direction="block" gap="base">
+              <s-checkbox
+                name="includeCollections"
+                label="Include collections"
+                details="Adds links to your storefront collections."
+                checked={options.includeCollections}
+                onChange={toggle("includeCollections")}
+              />
+              <s-checkbox
+                name="includeProducts"
+                label="Include products"
+                details="Adds links to your active products."
+                checked={options.includeProducts}
+                onChange={toggle("includeProducts")}
+              />
+              <s-checkbox
+                name="includePages"
+                label="Include pages"
+                details="Adds links to your storefront pages (about, FAQs, etc.)."
+                checked={options.includePages}
+                onChange={toggle("includePages")}
+              />
             </s-stack>
 
             <s-divider />
@@ -493,7 +494,10 @@ export default function Generate() {
             name="content"
             rows={20}
             value={preview}
-            onChange={(event: any) => setPreview(event?.target?.value ?? "")}
+            onChange={(event: { target?: { value?: string } | null } | Event) => {
+              const target = (event as { target?: { value?: string } | null }).target;
+              setPreview(target?.value ?? "");
+            }}
           />
 
             <s-stack direction="inline" gap="base">
